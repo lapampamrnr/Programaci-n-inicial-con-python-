@@ -1,220 +1,221 @@
+# -*- coding: utf-8 -*-
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox, ttk, filedialog
 import sqlite3
 import datetime
-import matplotlib.pyplot as plt
+import os
+import shutil
 
-# -------------------- BASE DE DATOS -------------------- #
-conexion = sqlite3.connect("comercio.db")
-cursor = conexion.cursor()
+# Crear o conectar la base de datos
+conn = sqlite3.connect("comercio.db")
+c = conn.cursor()
 
-cursor.execute("""
+# Crear tabla de usuarios
+c.execute("""
 CREATE TABLE IF NOT EXISTS usuarios (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    usuario TEXT UNIQUE,
-    contrasena TEXT
+    usuario TEXT NOT NULL,
+    contraseña TEXT NOT NULL,
+    correo TEXT NOT NULL
 )
 """)
 
-cursor.execute("""
+# Crear tabla de productos
+c.execute("""
 CREATE TABLE IF NOT EXISTS productos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nombre TEXT,
-    descripcion TEXT,
-    cantidad INTEGER,
-    precio REAL,
+    nombre TEXT NOT NULL,
     categoria TEXT,
+    precio REAL NOT NULL,
+    cantidad INTEGER NOT NULL,
     fecha TEXT
 )
 """)
+conn.commit()
 
-# Productos precargados solo una vez
-cursor.execute("SELECT COUNT(*) FROM productos")
-if cursor.fetchone()[0] == 0:
-    productos_ejemplo = [
-        ("Leche La Serenísima", "Entera 1L", 20, 1100, "Lácteos", datetime.date.today()),
-        ("Pan Lactal Bimbo", "Doble salvado", 15, 950, "Panadería", datetime.date.today()),
-        ("Detergente Magistral", "Limón 500ml", 10, 1300, "Limpieza", datetime.date.today()),
-        ("Batman", "Película DVD", 8, 2500, "Películas", datetime.date.today())
-    ]
-    cursor.executemany("INSERT INTO productos (nombre, descripcion, cantidad, precio, categoria, fecha) VALUES (?, ?, ?, ?, ?, ?)", productos_ejemplo)
-    conexion.commit()
+# Funciones principales
+def registrar_usuario():
+    def guardar():
+        usuario = entry_usuario.get()
+        contraseña = entry_contraseña.get()
+        correo = entry_correo.get()
+        if usuario and contraseña and correo:
+            c.execute("INSERT INTO usuarios (usuario, contraseña, correo) VALUES (?, ?, ?)", (usuario, contraseña, correo))
+            conn.commit()
+            messagebox.showinfo("Registro", "Usuario registrado correctamente")
+            ventana.destroy()
+        else:
+            messagebox.showwarning("Atención", "Complete todos los campos")
 
-# Usuario admin por defecto
-try:
-    cursor.execute("INSERT INTO usuarios (usuario, contrasena) VALUES (?, ?)", ("admin", "admin123"))
-    conexion.commit()
-except:
-    pass
+    ventana = tk.Toplevel()
+    ventana.title("Registrar Usuario")
 
-conexion.close()
+    tk.Label(ventana, text="Usuario").pack()
+    entry_usuario = tk.Entry(ventana)
+    entry_usuario.pack()
 
-# -------------------- FUNCIONES -------------------- #
-def abrir_panel(usuario_actual):
-    ventana_login.destroy()
-    panel = tk.Tk()
-    panel.title("Gestor de Comercio Adriana")
-    panel.geometry("1000x600")
-    panel.config(bg="white")
+    tk.Label(ventana, text="Contraseña").pack()
+    entry_contraseña = tk.Entry(ventana, show="*")
+    entry_contraseña.pack()
 
-    tk.Label(panel, text=f"Bienvenido/a: {usuario_actual}", bg="white", fg="black", font=("Arial", 12)).pack(pady=10)
+    tk.Label(ventana, text="Correo").pack()
+    entry_correo = tk.Entry(ventana)
+    entry_correo.pack()
 
-    marco_botones = tk.Frame(panel, bg="white")
-    marco_botones.pack(pady=20)
+    tk.Button(ventana, text="Guardar", command=guardar).pack()
 
-    def boton(texto, comando):
-        return tk.Button(marco_botones, text=texto, width=20, height=2, bg="#E6E6FA", fg="black", font=("Arial", 10), command=comando)
+def iniciar_sesion():
+    usuario = entry_usuario.get()
+    contraseña = entry_contraseña.get()
+    c.execute("SELECT * FROM usuarios WHERE usuario=? AND contraseña=?", (usuario, contraseña))
+    if c.fetchone():
+        messagebox.showinfo("Inicio de sesión", f"Bienvenido, {usuario}!")
+        mostrar_menu_principal()
+        login.destroy()
+    else:
+        messagebox.showerror("Error", "Usuario o contraseña incorrectos")
 
-    def ver_productos():
-        conexion = sqlite3.connect("comercio.db")
-        cursor = conexion.cursor()
-        cursor.execute("SELECT * FROM productos")
-        productos = cursor.fetchall()
-        conexion.close()
+def recuperar_contraseña():
+    correo = entry_usuario.get()
+    c.execute("SELECT contraseña FROM usuarios WHERE correo=?", (correo,))
+    resultado = c.fetchone()
+    if resultado:
+        messagebox.showinfo("Recuperación", f"Tu contraseña es: {resultado[0]}")
+    else:
+        messagebox.showerror("Error", "Correo no encontrado")
 
-        top = tk.Toplevel(panel)
-        top.title("Lista de Productos")
+def agregar_producto():
+    def guardar():
+        nombre = entry_nombre.get()
+        categoria = entry_categoria.get()
+        precio = float(entry_precio.get())
+        cantidad = int(entry_cantidad.get())
+        fecha = datetime.date.today().isoformat()
+        c.execute("INSERT INTO productos (nombre, categoria, precio, cantidad, fecha) VALUES (?, ?, ?, ?, ?)",
+                  (nombre, categoria, precio, cantidad, fecha))
+        conn.commit()
+        messagebox.showinfo("Producto", "Producto guardado correctamente")
+        ventana.destroy()
 
-        tree = ttk.Treeview(top, columns=("ID", "Nombre", "Descripción", "Cantidad", "Precio", "Categoría", "Fecha"), show='headings')
-        for col in tree["columns"]:
-            tree.heading(col, text=col)
-        for p in productos:
-            tree.insert('', 'end', values=p)
-        tree.pack(expand=True, fill="both")
+    ventana = tk.Toplevel()
+    ventana.title("Agregar Producto")
 
-    def agregar_producto():
-        def guardar():
-            datos = (nombre.get(), desc.get(), int(cant.get()), float(precio.get()), cat.get(), datetime.date.today())
-            conexion = sqlite3.connect("comercio.db")
-            cursor = conexion.cursor()
-            cursor.execute("INSERT INTO productos (nombre, descripcion, cantidad, precio, categoria, fecha) VALUES (?, ?, ?, ?, ?, ?)", datos)
-            conexion.commit()
-            conexion.close()
-            messagebox.showinfo("Éxito", "Producto agregado")
-            top.destroy()
+    tk.Label(ventana, text="Nombre").pack()
+    entry_nombre = tk.Entry(ventana)
+    entry_nombre.pack()
 
-        top = tk.Toplevel(panel)
-        top.title("Agregar Producto")
+    tk.Label(ventana, text="Categoría").pack()
+    entry_categoria = tk.Entry(ventana)
+    entry_categoria.pack()
 
-        nombre = tk.Entry(top)
-        desc = tk.Entry(top)
-        cant = tk.Entry(top)
-        precio = tk.Entry(top)
-        cat = tk.Entry(top)
+    tk.Label(ventana, text="Precio").pack()
+    entry_precio = tk.Entry(ventana)
+    entry_precio.pack()
 
-        for i, txt in enumerate(["Nombre", "Descripción", "Cantidad", "Precio", "Categoría"]):
-            tk.Label(top, text=txt).grid(row=i, column=0)
-        for i, ent in enumerate([nombre, desc, cant, precio, cat]):
-            ent.grid(row=i, column=1)
+    tk.Label(ventana, text="Cantidad").pack()
+    entry_cantidad = tk.Entry(ventana)
+    entry_cantidad.pack()
 
-        tk.Button(top, text="Guardar", command=guardar).grid(row=5, column=0, columnspan=2)
+    tk.Button(ventana, text="Registrar Producto", command=guardar).pack()
 
-    def eliminar_producto():
-        def eliminar():
-            conexion = sqlite3.connect("comercio.db")
-            cursor = conexion.cursor()
-            cursor.execute("DELETE FROM productos WHERE id = ?", (int(entry.get()),))
-            conexion.commit()
-            conexion.close()
-            messagebox.showinfo("Éxito", "Producto eliminado")
-            top.destroy()
+def ver_productos():
+    ventana = tk.Toplevel()
+    ventana.title("Productos")
 
-        top = tk.Toplevel(panel)
-        top.title("Eliminar Producto")
-        tk.Label(top, text="ID del producto a eliminar:").pack()
-        entry = tk.Entry(top)
-        entry.pack()
-        tk.Button(top, text="Eliminar", command=eliminar).pack()
+    tree = ttk.Treeview(ventana, columns=("ID", "Nombre", "Categoría", "Precio", "Cantidad", "Fecha"), show="headings")
+    for col in tree["columns"]:
+        tree.heading(col, text=col)
+    tree.pack(fill="both", expand=True)
 
-    def exportar_txt():
-        conexion = sqlite3.connect("comercio.db")
-        cursor = conexion.cursor()
-        cursor.execute("SELECT * FROM productos")
-        productos = cursor.fetchall()
-        conexion.close()
-        with open("inventario.txt", "w") as f:
-            for p in productos:
-                f.write(f"{p}\n")
-        messagebox.showinfo("Exportado", "Inventario exportado como TXT")
+    for row in c.execute("SELECT * FROM productos"):
+        tree.insert("", "end", values=row)
 
-    def ver_estadisticas():
-        conexion = sqlite3.connect("comercio.db")
-        cursor = conexion.cursor()
-        cursor.execute("SELECT fecha, cantidad FROM productos")
-        datos = cursor.fetchall()
-        conexion.close()
+def eliminar_producto():
+    def eliminar():
+        id_producto = entry_id.get()
+        c.execute("DELETE FROM productos WHERE id=?", (id_producto,))
+        conn.commit()
+        messagebox.showinfo("Eliminar", "Producto eliminado")
+        ventana.destroy()
 
-        meses = {}
-        for fecha, cant in datos:
-            mes = fecha[:7]  # YYYY-MM
-            meses[mes] = meses.get(mes, 0) + cant
+    ventana = tk.Toplevel()
+    ventana.title("Eliminar Producto")
 
-        plt.bar(meses.keys(), meses.values())
-        plt.title("Estadísticas de productos por mes")
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.show()
+    tk.Label(ventana, text="ID del producto a eliminar").pack()
+    entry_id = tk.Entry(ventana)
+    entry_id.pack()
+    tk.Button(ventana, text="Eliminar", command=eliminar).pack()
 
-    def salir():
-        panel.destroy()
+def exportar_txt():
+    with open("productos.txt", "w") as file:
+        for row in c.execute("SELECT * FROM productos"):
+            file.write(str(row) + "\n")
+    messagebox.showinfo("Exportar", "Productos exportados a productos.txt")
+
+def crear_backup():
+    shutil.copy("comercio.db", "backup_comercio.db")
+    messagebox.showinfo("Backup", "Backup creado exitosamente")
+
+def mostrar_estadisticas():
+    total_productos = c.execute("SELECT COUNT(*) FROM productos").fetchone()[0]
+    total_valor = c.execute("SELECT SUM(precio * cantidad) FROM productos").fetchone()[0]
+    messagebox.showinfo("Estadísticas",
+                        f"Total de productos: {total_productos}\nValor total: ${total_valor:.2f}")
+
+def ver_usuarios():
+    ventana = tk.Toplevel()
+    ventana.title("Usuarios Registrados")
+    for row in c.execute("SELECT id, usuario, correo FROM usuarios"):
+        tk.Label(ventana, text=str(row)).pack()
+
+def mostrar_menu_principal():
+    menu = tk.Tk()
+    menu.title("Gestor de Comercio Adriana")
+    menu.geometry("600x500")
+    menu.configure(bg="#d0e4f5")
 
     botones = [
-        ("Ver Productos", ver_productos),
+        ("Agregar Usuario", registrar_usuario),
         ("Agregar Producto", agregar_producto),
+        ("Ver Productos", ver_productos),
         ("Eliminar Producto", eliminar_producto),
         ("Exportar a TXT", exportar_txt),
-        ("Ver Estadísticas", ver_estadisticas),
-        ("Salir", salir)
+        ("Crear Backup BD", crear_backup),
+        ("Estadísticas", mostrar_estadisticas),
+        ("Ver Usuarios", ver_usuarios),
+        ("Salir", menu.quit)
     ]
 
-    for i, (txt, cmd) in enumerate(botones):
-        boton(txt, cmd).grid(row=i//2, column=i%2, padx=10, pady=10)
+    for texto, comando in botones:
+        tk.Button(menu, text=texto, command=comando, width=30).pack(pady=5)
 
-    panel.mainloop()
+    menu.mainloop()
 
-# -------------------- LOGIN -------------------- #
-ventana_login = tk.Tk()
-ventana_login.title("Ingreso al Gestor de Comercio")
-ventana_login.geometry("400x300")
-ventana_login.config(bg="#E6E6FA")
+# Ventana de inicio de sesión
+login = tk.Tk()
+login.title("Login - Gestor Adriana")
+login.geometry("400x300")
 
-usuario = tk.Entry(ventana_login)
-contrasena = tk.Entry(ventana_login, show="*")
+frame = tk.Frame(login)
+frame.pack(pady=20)
 
-usuario.insert(0, "admin")
-contrasena.insert(0, "admin123")
+label_usuario = tk.Label(frame, text="Usuario")
+label_usuario.grid(row=0, column=0)
+entry_usuario = tk.Entry(frame)
+entry_usuario.grid(row=0, column=1)
 
-tk.Label(ventana_login, text="Usuario", bg="#E6E6FA").pack()
-usuario.pack()
-tk.Label(ventana_login, text="Contraseña", bg="#E6E6FA").pack()
-contrasena.pack()
+label_contraseña = tk.Label(frame, text="Contraseña")
+label_contraseña.grid(row=1, column=0)
+entry_contraseña = tk.Entry(frame, show="*")
+entry_contraseña.grid(row=1, column=1)
 
-def login():
-    u = usuario.get()
-    c = contrasena.get()
-    conexion = sqlite3.connect("comercio.db")
-    cursor = conexion.cursor()
-    cursor.execute("SELECT * FROM usuarios WHERE usuario=? AND contrasena=?", (u, c))
-    if cursor.fetchone():
-        abrir_panel(u)
-    else:
-        messagebox.showerror("Error", "Credenciales incorrectas")
-    conexion.close()
+btn_login = tk.Button(login, text="Iniciar Sesión", command=iniciar_sesion)
+btn_login.pack(pady=5)
 
-def registrar():
-    u = usuario.get()
-    c = contrasena.get()
-    conexion = sqlite3.connect("comercio.db")
-    cursor = conexion.cursor()
-    try:
-        cursor.execute("INSERT INTO usuarios (usuario, contrasena) VALUES (?, ?)", (u, c))
-        conexion.commit()
-        messagebox.showinfo("Registrado", "Usuario registrado")
-    except:
-        messagebox.showerror("Error", "Ese usuario ya existe")
-    conexion.close()
+btn_registro = tk.Button(login, text="Registrar Usuario", command=registrar_usuario)
+btn_registro.pack(pady=5)
 
-tk.Button(ventana_login, text="Ingresar", command=login, bg="#D8BFD8").pack(pady=5)
-tk.Button(ventana_login, text="Registrarse", command=registrar, bg="#D8BFD8").pack(pady=5)
+btn_olvido = tk.Button(login, text="Olvidé mi contraseña", command=recuperar_contraseña)
+btn_olvido.pack(pady=5)
 
-ventana_login.mainloop()
+login.mainloop()
